@@ -1,0 +1,19 @@
+#!/bin/bash
+#
+# rc.local file
+
+ip rule add to 44.0.0.0/8 table 44 priority 44
+ip rule add from 44.4.12.0/24 table 44 priority 45
+ip route add default dev tun0 via 44.4.12.1 onlink table 44
+ip route add 44.4.12.0/24 dev tun0 table 44
+
+iptables -t mangle -I OUTPUT  -s 44.4.12.7 -p udp -j TEE --gateway 44.4.12.1
+iptables -t mangle -I OUTPUT  -s 44.4.12.7 -p icmp -j TEE --gateway 44.4.12.1
+
+/usr/sbin/openvpn --daemon ovpn-ke6sth -status /run/openvpn/ke6sth.status  10 --cd /etc/openvpn --config /etc/openvpn/ke6sth.conf
+
+# Starts Allstar 
+
+/usr/local/etc/rc.allstar 
+
+exit 0

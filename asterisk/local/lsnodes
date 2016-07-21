@@ -1,0 +1,130 @@
+#!/usr/bin/perl
+#
+#use strict;
+#use warnings;
+#
+#require "timelocal.pl";
+use List::Util 'first';
+use Scalar::Util qw(looks_like_number);
+#use Term::ANSIScreen qw/:color :cursor :screen :constants/;
+#$Term::ANSIScreen::AUTORESET = 1;
+#$Term::ANSIScreen::EACHLINE = "\n";
+# Following line checks for module that clears the screen
+# ANSIScreen.pm is required. Either download the module or
+# comment out this line and one further down
+#use Term::ANSIScreen qw(cls);
+#
+use CGI qw(:cgi-lib :standard);
+#&ReadParse(%in);
+#my $node = $in{"node"};       
+#
+my $node = $ARGV[0];
+#
+if ($node == "") {
+	print "\nNo node number given  - lsnodes <nodenumber>\n\n";
+	exit;
+}
+
+my $allstardb = "/var/log/asterisk/astdb.txt";
+#
+my $get_connected_nodes = "asterisk -rx \"rpt nodes $node\"";
+my $get_node_status = "asterisk -rx \"rpt stats $node\"";
+my $get_node_lstatus = "asterisk -rx \"rpt lstats $node\"";
+my $get_iax_registry = "asterisk -rx \"iax2 show registry\"";
+#
+select (STDOUT);
+$| =1;
+select (STDERR);
+$| = 1;
+#
+#(my $sec,my $min,my $hour,my $mday,my $mon,my $year,my $wday,my $yday,my $isdst) = localtime();
+#printf("%02d/%02d/%4d %02d:%02d:%02d\n", $mon+1,$mday,$year+1900,$hour, $min, $sec);
+#
+my ($var1,$var2,$var3,$var4,$var5,$var6);
+open (ASTDB,$allstardb);
+my @list = <ASTDB>;
+my $match = first { /^$node\|/ } @list;
+my @nodelist=split(/\|/, $match);
+($var1,$var2,$var3,$var4)=@nodelist;
+chomp($var4);
+# Comment next line if ANSISreen.pm is not installed
+#cls();
+# ------------- Get IAX2 Registry ----------------------
+my $iax_register = `$get_iax_registry`;
+$iax_register =~  s/^(?:.*\n){1,1}//;      #  Remove first line
+$iax_register =~ s/ +/ /g;                 # Replace multiple space with single space
+$iax_register =~ s/\n/ /g;
+
+# ----------- Get node lstat example -------------------
+my $node_lstatus = `$get_node_lstatus`;
+$node_lstatus =~  s/^(?:.*\n){1,2}//;       #  Remove first two lines
+$node_lstatus =~ s/ +/ /g;                  # Replace multiple space with single space
+my @lstat_array = split (/ /,$node_lstatus);
+
+# -----------  Get nodes status example -----------------
+#
+my $node_status = `$get_node_status`;
+
+$node_status =~  s/^(?:.*\n){1,2}//;       #  Remove first two lines
+$node_status =~  s/\.//g;                  #  Remove all .
+$node_status =~ s/\n/&/g;                  #  Replace all \n with &
+$node_status =~  s/: /&/g;                 #  Replace all : with &
+my @stat_array = split (/&/,$node_status); #  Split on &
+
+#
+# --------------------------------------------------------
+
+print "Nodes connected to - \n";
+printf ("%-10.8s%2s%-10.8s%2s%-25.25s%2s%-20.20s\n",$node,"  ",$var2,"  ",$var3,"  ",($var4));
+print "----------------------------------------------------------------\n";
+#
+print "Node         Call            Description           Location\n";
+print "----------------------------------------------------------------\n";
+my $nodes_connected = `$get_connected_nodes`;
+
+$nodes_connected =~  s/^(?:.*\n){1,3}//;    # Remove first 3 lines 
+$nodes_connected =~ s/,/ /g;                # Replace , with space
+$nodes_connected =~ s/\n/ /g;               # Replace newlines with space
+$nodes_connected =~ s/ +/ /g;               # Replace multiple space with single space
+
+my @array = split (/ /,$nodes_connected);
+my $count = 1;
+foreach my $nodenum (@array) {
+   $nodenum = substr($nodenum,1,10);
+    if (looks_like_number($nodenum)) {
+#        if ($nodenum >= 100000 || (substr($nodenum,0)==0) ) {
+if (substr($nodenum,0,1) == 3) {
+           $nodenum = substr($nodenum,1,10);
+           $nodenum =~ s/^0+//g; 
+           my $get_echo_call = "asterisk -rx \"echolink dbget n $nodenum\"";
+           $echo_data = `$get_echo_call`;
+           my @echo_array = split (/\|/, $echo_data);
+           ($n,$c,$i) = @echo_array;
+           if ($c eq "") {
+              $c = "NOINFO"; 
+           } 
+           printf ("%-10.8s%2s%-10.8s%2s%-25.25s\n",$nodenum,"  ",$c,"  ","ECHOLINK"); 
+        } elsif ($nodenum >= 80000 && $nodenum < 90000) {
+           $nodenum = substr($nodenum,1,10);
+           printf ("%-10.8s%2s%-10.8s%2s%-25.25s\n",$nodenum,"  "," " ,"  ","IRLP");
+        } else {   
+
+           (my $match = first { /^$nodenum\|/ } @list);
+           $match =~ s/\n//g;
+           @nodelist=split(/\|/, $match);
+           ($var1,$var2,$var3,$var4)=@nodelist;
+           if ($match=="") {
+                 printf ("%-10.8s%2s%-10.8s\n",$nodenum,"  ","No info");
+           } else {
+                 printf ("%-10.8s%2s%-10.8s%2s%-25.25s%2s%-20.20s\n",$var1,"  ",$var2,"  ",$var3,"  ",($var4));
+           }
+        }
+    } elsif ($nodenum == /[A-Za-z0-9]/) {
+           printf ("%18s%25s\n",$nodenum,"via phone or iaxrpt");
+    }
+}
+print "\n";
+
+sub ltrim { my $s = shift; $s =~ s/^\s+//; return $s };
+sub rtrim { my $s = shift; $s =~ s/\s+$//; return $s };
+sub trim { my $s = shift; $s =~ s/^\s+|\s+$//g; return $s };
